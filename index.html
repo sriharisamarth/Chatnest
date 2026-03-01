@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ChatNest</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      background: #2b2d31;
+      color: #fff;
+    }
+
+    .sidebar {
+      width: 230px;
+      background: #1e1f22;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sidebar h2 {
+      color: #ffd700;
+      text-align: center;
+      margin: 5px 0;
+    }
+
+    .sidebar input {
+      padding: 6px;
+      border: none;
+      outline: none;
+      font-size: 14px;
+    }
+
+    .sidebar button {
+      background: #ffd700;
+      color: #7a0000;
+      border: none;
+      padding: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .chat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #313338;
+    }
+
+    .chat-header {
+      padding: 10px;
+      background: #1e1f22;
+      font-weight: bold;
+      color: #ffd700;
+    }
+
+    #messages {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .bubble {
+      max-width: 65%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .me {
+      align-self: flex-end;
+      background: #ffd700;
+      color: #7a0000;
+      text-align: right;
+    }
+
+    .other {
+      align-self: flex-start;
+      background: #3f4147;
+    }
+
+    .name {
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .time {
+      font-size: 10px;
+      opacity: 0.7;
+      margin-top: 2px;
+    }
+
+    .input-area {
+      padding: 8px;
+      background: #1e1f22;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .emojis button {
+      font-size: 16px;
+      background: none;
+      border: none;
+      cursor: pointer;
+    }
+
+    .inputs {
+      display: flex;
+      gap: 5px;
+    }
+
+    .inputs input {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      outline: none;
+    }
+
+    .inputs button {
+      background: #ffd700;
+      color: #7a0000;
+      border: none;
+      padding: 8px 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <h2>ChatNest</h2>
+  <input id="name" placeholder="Your name">
+  <input id="room" placeholder="Room name">
+  <input id="password" placeholder="Room password">
+  <button onclick="joinRoom()">Join Room</button>
+</div>
+
+<!-- Chat -->
+<div class="chat">
+  <div class="chat-header" id="roomTitle">No room joined</div>
+  <div id="messages"></div>
+
+  <div class="input-area">
+    <div class="emojis">
+      <button onclick="addEmoji('😀')">😀</button>
+      <button onclick="addEmoji('😂')">😂</button>
+      <button onclick="addEmoji('🔥')">🔥</button>
+      <button onclick="addEmoji('💛')">💛</button>
+      <button onclick="addEmoji('😎')">😎</button>
+    </div>
+
+    <div class="inputs">
+      <input id="text" placeholder="Type a message...">
+      <button onclick="send()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let myId = localStorage.getItem("chatnest_id");
+  if (!myId) {
+    myId = Math.random().toString(36).slice(2);
+    localStorage.setItem("chatnest_id", myId);
+  }
+
+  let channel = null;
+  let currentRoom = "";
+  let messagesDiv = document.getElementById("messages");
+
+  function hash(text) {
+    return btoa(text); // simple encoding (safe + easy)
+  }
+
+  function joinRoom() {
+    const room = document.getElementById("room").value.trim();
+    const password = document.getElementById("password").value;
+
+    if (!room || !password) {
+      alert("Room and password required");
+      return;
+    }
+
+    const passKey = "chatnest_pass_" + room;
+    const savedPass = localStorage.getItem(passKey);
+
+    if (savedPass && savedPass !== hash(password)) {
+      alert("Wrong password!");
+      return;
+    }
+
+    if (!savedPass) {
+      localStorage.setItem(passKey, hash(password));
+    }
+
+    currentRoom = room;
+    document.getElementById("roomTitle").textContent = "🔒 Room: " + room;
+    messagesDiv.innerHTML = "";
+
+    channel = new BroadcastChannel("chatnest_" + room);
+
+    let saved = JSON.parse(localStorage.getItem("chatnest_" + room) || "[]");
+    saved.forEach(showMessage);
+
+    channel.onmessage = (e) => {
+      showMessage(e.data);
+      saveMessage(e.data);
+    };
+  }
+
+  function send() {
+    if (!channel) return;
+
+    const name = document.getElementById("name").value || "Anon";
+    const text = document.getElementById("text").value.trim();
+    if (!text) return;
+
+    const msg = {
+      id: myId,
+      name,
+      text,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    showMessage(msg);
+    saveMessage(msg);
+    channel.postMessage(msg);
+
+    document.getElementById("text").value = "";
+  }
+
+  function showMessage(msg) {
+    const div = document.createElement("div");
+    div.className = "bubble " + (msg.id === myId ? "me" : "other");
+    div.innerHTML = `
+      <div class="name">${msg.name}</div>
+      <div>${msg.text}</div>
+      <div class="time">${msg.time}</div>
+    `;
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  function saveMessage(msg) {
+    let key = "chatnest_" + currentRoom;
+    let saved = JSON.parse(localStorage.getItem(key) || "[]");
+    saved.push(msg);
+    localStorage.setItem(key, JSON.stringify(saved));
+  }
+
+  function addEmoji(e) {
+    const input = document.getElementById("text");
+    input.value += e;
+    input.focus();
+  }
+</script>
+
+</body>
+</html>
